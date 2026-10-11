@@ -194,6 +194,12 @@ async function buildCharacter(opts) {
   ch.walk = ch.mixer.clipAction(wc); ch.idle = ch.mixer.clipAction(ic);
   ch.walk.play(); ch.idle.play(); ch.walk.setEffectiveWeight(1); ch.idle.setEffectiveWeight(0);
   ch.mixer.setTime(0); model.updateMatrixWorld(true);
+  { // make sure the rig faces +Z (toes ahead of ankles); flip 180 deg if not
+    const lf = ch.footBones.find(b => /LeftFoot$/.test(b.name)), lt = ch.footBones.find(b => /LeftToeBase$/.test(b.name));
+    if (lf && lt) { const t1 = new THREE.Vector3(), t2 = new THREE.Vector3(); lf.getWorldPosition(t1); lt.getWorldPosition(t2); ch.actor.worldToLocal(t1); ch.actor.worldToLocal(t2);
+      console.log('[facing]', opts.name, (t2.z - t1.z).toFixed(3));
+      if (t2.z < t1.z) { model.rotation.y += Math.PI; model.updateMatrixWorld(true); } }
+  }
   ch.hipsRest = new THREE.Vector3(); hips.getWorldPosition(tmp); ch.actor.worldToLocal(tmp); ch.hipsRest.copy(tmp);
 
   // stride measurement: backward travel of each foot relative to hips per cycle = body travel per cycle

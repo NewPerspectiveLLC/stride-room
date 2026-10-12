@@ -144,8 +144,23 @@ async function buildCharacter(opts) {
     const Q = THREE.Quaternion, q1 = new Q(), q2 = new Q();
     const restS = {}, restT = {};
     for (const b of tgtBones) { restS[b.name] = srcBones[b.name].getWorldQuaternion(new Q()); restT[b.name] = b.getWorldQuaternion(new Q()); }
+    if (opts.genericHips) {   // rest-pose alignment: MPFB binds in an A-pose, Xbot in a T-pose. Rotate each target rest so its bone direction matches the source's.
+      const wp = o => o.getWorldPosition(new THREE.Vector3());
+      const kid = b => b.children.find(c => c.isBone && srcBones[c.name]);
+      let n = 0;
+      for (const b of tgtBones) {
+        const c = kid(b); if (!c) continue;
+        const dT = wp(c).sub(wp(b)).normalize(), dS = wp(srcBones[c.name]).sub(wp(srcBones[b.name])).normalize();
+        const ang = dT.angleTo(dS); if (ang < 0.02) continue;
+        restT[b.name] = new Q().setFromUnitVectors(dT, dS).multiply(restT[b.name]); n++;
+        if (/Arm$|Shoulder$/.test(b.name)) console.log('[align]', opts.name, b.name, (ang * 57.3).toFixed(1) + 'deg');
+      }
+      console.log('[align]', opts.name, n, 'bones re-aimed');
+    }
     const srcMixer = new THREE.AnimationMixer(src.scene);
     const rest = hips.position.clone(), kk = 1 / model.scale.x;
+    const pInv = hips.parent.getWorldQuaternion(new Q()).invert(), pS = hips.parent.getWorldScale(new THREE.Vector3()).x;
+    let srcK = 1; { const a = new THREE.Vector3(), b = new THREE.Vector3(); srcBones['mixamorigHips'].getWorldPosition(a); hips.getWorldPosition(b); srcK = b.y / a.y; }  // leg-length ratio
     const convert = name => {
       const sc = THREE.AnimationClip.findByName(src.animations, name); if (!sc) throw new Error('no clip ' + name);
       srcMixer.clipAction(sc).play();
@@ -161,6 +176,11 @@ async function buildCharacter(opts) {
           const wt = D.clone().multiply(restT[b.name]); worldAnim[b.name] = wt;
           const pw = b.parent && worldAnim[b.parent.name] ? worldAnim[b.parent.name] : (b.parent ? b.parent.getWorldQuaternion(new Q()) : new Q());
           vals[b.name].push(...pw.clone().invert().multiply(wt).toArray());
+        }
+        if (opts.genericHips) {   // rig-agnostic: source hips world delta (sway+bob, no forward) -> target hips-parent local
+          const hw = srcBones['mixamorigHips'].getWorldPosition(new THREE.Vector3()); if (!p0) p0 = hw.clone();
+          const d = new THREE.Vector3((hw.x - p0.x) * srcK, (hw.y - p0.y) * srcK, 0).applyQuaternion(pInv).divideScalar(pS);
+          hp.push(rest.x + d.x, rest.y + d.y, rest.z + d.z); continue;
         }
         const hs = srcBones['mixamorigHips'].position; if (!p0) p0 = hs.clone();
         hp.push(rest.x + (hs.x - p0.x) * kk, rest.y, rest.z - (hs.y - p0.y) * kk);   // sway + bob only (Michelle hips: up = -Z)
@@ -230,8 +250,8 @@ async function buildCharacter(opts) {
 }
 
 const CFG = [
-  { name: 'Michelle', url: MODEL_URL, animUrl: ANIM_SOURCE_URL, walk: WALK_CLIP, idle: IDLE_CLIP, height: TARGET_ANKLE_TO_HEAD, s0: 0 },
-  { name: 'Soldier', url: './models/mixamo-male-soldier.glb', animUrl: null, walk: 'Walk', idle: 'Idle', height: 1.70, s0: LEAD },
+  { name: 'Woman', url: './models/mpfb_test_female.glb', animUrl: ANIM_SOURCE_URL, walk: WALK_CLIP, idle: IDLE_CLIP, height: 1.58, s0: 0, genericHips: true },
+  { name: 'Man', url: './models/mpfb_test_male.glb', animUrl: ANIM_SOURCE_URL, walk: WALK_CLIP, idle: IDLE_CLIP, height: 1.67, s0: LEAD, genericHips: true },  // 1.67 ankle->crown ~= 1.75 m total
 ];
 Promise.all(CFG.map(buildCharacter)).then(list => {
   characters.push(...list);
